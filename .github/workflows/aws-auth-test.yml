@@ -10,7 +10,7 @@ permissions:
 jobs:
 
   test-aws-auth:
-    name: Test ${{ matrix.environment }} AWS authentication
+    name: Test ${{ matrix.environment }}
     runs-on: ubuntu-latest
 
     strategy:
@@ -20,12 +20,15 @@ jobs:
         include:
           - environment: dev
             account_id: "368287211388"
+            state_bucket: "fidespath-m-dev-terraform-state"
 
           - environment: stage
             account_id: "397348547249"
+            state_bucket: "fidespath-stage-terraform-state"
 
           - environment: prod
             account_id: "527055790448"
+            state_bucket: "fidespath-prod-terraform-state"
 
     environment: ${{ matrix.environment }}
 
@@ -44,3 +47,12 @@ jobs:
           echo "Environment: ${{ matrix.environment }}"
           echo "Expected account: ${{ matrix.account_id }}"
           aws sts get-caller-identity
+
+      - name: Test state bucket access
+        run: |
+          echo "Testing state bucket:"
+          echo "${{ matrix.state_bucket }}"
+
+          aws s3 ls s3://${{ matrix.state_bucket }}
+
+          echo "State bucket access: SUCCESS"
