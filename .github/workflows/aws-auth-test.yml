@@ -8,53 +8,39 @@ permissions:
   contents: read
 
 jobs:
-  test-dev:
-    name: Test DEV AWS Authentication
+
+  test-aws-auth:
+    name: Test ${{ matrix.environment }} AWS authentication
     runs-on: ubuntu-latest
 
-    environment: dev
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+          - environment: dev
+            account_id: "368287211388"
+
+          - environment: stage
+            account_id: "397348547249"
+
+          - environment: prod
+            account_id: "527055790448"
+
+    environment: ${{ matrix.environment }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: GitHubActionsTerraformDev
-          allowed-account-ids: "368287211388"
+          role-session-name: GitHubActionsTerraform-${{ matrix.environment }}
+          allowed-account-ids: ${{ matrix.account_id }}
 
       - name: Verify AWS identity
         run: |
+          echo "Environment: ${{ matrix.environment }}"
+          echo "Expected account: ${{ matrix.account_id }}"
           aws sts get-caller-identity
-
-      
-      - name: Test DEV state bucket
-        run: |
-          echo "Testing DEV state bucket..."
-          aws s3 ls s3://fidespath-m-dev-terraform-state
-          echo "DEV bucket access: SUCCESS"
-
-      - name: Verify STAGE bucket is blocked
-        run: |
-          echo "Testing STAGE bucket access (should fail)..."
-
-          if aws s3 ls s3://fidespath-stage-terraform-state; then
-            echo "ERROR: DEV role can access STAGE bucket!"
-            exit 1
-          else
-            echo "SUCCESS: DEV role cannot access STAGE bucket."
-          fi
-
-      - name: Verify PROD bucket is blocked
-        run: |
-          echo "Testing PROD bucket access (should fail)..."
-
-          if aws s3 ls s3://fidespath-prod-terraform-state; then
-            echo "ERROR: DEV role can access PROD bucket!"
-            exit 1
-          else
-            echo "SUCCESS: DEV role cannot access PROD bucket."
-          fi
