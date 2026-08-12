@@ -1,0 +1,177 @@
+name: Terraform Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select the environment to deploy"
+        required: true
+        type: choice
+        options:
+          - dev
+          - stage
+          - prod
+
+      confirm:
+        description: "Type DEPLOY to confirm"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy Terraform - ${{ inputs.environment }}
+
+    runs-on: ubuntu-latest
+
+    # This connects the selected input to the corresponding
+    # GitHub Environment and its AWS_ROLE_ARN/AWS_REGION variables.
+    environment: ${{ inputs.environment }}
+
+    steps:
+
+      # --------------------------------------------------
+      # 1. Validate deployment confirmation
+      # --------------------------------------------------
+
+      - name: Verify deployment confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "DEPLOY" ]; then
+            echo "ERROR: Deployment confirmation failed."
+            echo "You must type DEPLOY."
+            exit 1
+          fi
+
+          echo "Deployment confirmation successful."
+
+      # --------------------------------------------------
+      # 2. Checkout
+      # --------------------------------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # --------------------------------------------------
+      # 3. Setup Terraform
+      # --------------------------------------------------
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.12.0
+
+      # --------------------------------------------------
+      # 4. Determine environment configuration
+      # --------------------------------------------------
+
+      - name: Determine deployment configuration
+        id: config
+        shell: bash
+        run: |
+          case "${{ inputs.environment }}" in
+
+            dev)
+              echo "working_directory=Environments/dev" >> "$GITHUB_OUTPUT"
+              echo "account_id=368287211388" >> "$GITHUB_OUTPUT"
+              ;;
+
+            stage)
+              echo "working_directory=Environments/stage" >> "$GITHUB_OUTPUT"
+              echo "account_id=397348547249" >> "$GITHUB_OUTPUT"
+              ;;
+
+            prod)
+              echo "working_directory=Environments/prod" >> "$GITHUB_OUTPUT"
+              echo "account_id=527055790448" >> "$GITHUB_OUTPUT"
+              ;;
+
+            *)
+              echo "ERROR: Invalid environment."
+              exit 1
+              ;;
+
+          esac
+
+      # --------------------------------------------------
+      # 5. Configure AWS credentials using GitHub OIDC
+      # --------------------------------------------------
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+          role-session-name: GitHubActionsTerraform-${{ inputs.environment }}
+
+          # Extra protection:
+          # Fail if credentials belong to an unexpected account.
+          allowed-account-ids: ${{ steps.config.outputs.account_id }}
+
+      # --------------------------------------------------
+      # 6. Verify AWS account
+      # --------------------------------------------------
+
+      - name: Verify AWS identity
+        run: |
+          echo "Selected environment:"
+          echo "${{ inputs.environment }}"
+
+          echo "Expected AWS account:"
+          echo "${{ steps.config.outputs.account_id }}"
+
+          echo "Actual AWS identity:"
+          aws sts get-caller-identity
+
+      # --------------------------------------------------
+      # 7. Terraform Init
+      # --------------------------------------------------
+
+      - name: Terraform Init
+        working-directory: ${{ steps.config.outputs.working_directory }}
+        run: |
+          terraform init \
+            -input=false \
+            -no-color
+
+      # --------------------------------------------------
+      # 8. Terraform Format Check
+      # --------------------------------------------------
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      # --------------------------------------------------
+      # 9. Terraform Validate
+      # --------------------------------------------------
+
+      - name: Terraform Validate
+        working-directory: ${{ steps.config.outputs.working_directory }}
+        run: terraform validate
+
+      # --------------------------------------------------
+      # 10. Terraform Plan
+      # --------------------------------------------------
+
+      - name: Terraform Plan
+        working-directory: ${{ steps.config.outputs.working_directory }}
+        run: |
+          terraform plan \
+            -input=false \
+            -no-color \
+            -out=tfplan
+
+      # --------------------------------------------------
+      # 11. Terraform Apply
+      # --------------------------------------------------
+
+      - name: Terraform Apply
+        working-directory: ${{ steps.config.outputs.working_directory }}
+        run: |
+          terraform apply \
+            -input=false \
+            -auto-approve \
+            tfplan

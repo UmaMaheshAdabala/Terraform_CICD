@@ -1,0 +1,58 @@
+name: Terraform PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'Environments/**'
+      - 'modules/**'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-check:
+    name: Terraform Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.12.0
+
+      # Check formatting for the entire repository
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      # Validate DEV
+      - name: Terraform Init - DEV
+        working-directory: Environments/dev
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform Validate - DEV
+        working-directory: Environments/dev
+        run: terraform validate
+
+      # Validate STAGE
+      - name: Terraform Init - STAGE
+        working-directory: Environments/stage
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform Validate - STAGE
+        working-directory: Environments/stage
+        run: terraform validate
+
+      # Validate PROD
+      - name: Terraform Init - PROD
+        working-directory: Environments/prod
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform Validate - PROD
+        working-directory: Environments/prod
+        run: terraform validate
