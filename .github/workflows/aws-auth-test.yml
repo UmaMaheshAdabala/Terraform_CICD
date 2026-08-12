@@ -8,38 +8,24 @@ permissions:
   contents: read
 
 jobs:
-  inspect-oidc:
-    name: Inspect GitHub OIDC Claims
+  test-dev:
+    name: Test DEV AWS Authentication
     runs-on: ubuntu-latest
 
     environment: dev
 
     steps:
-      - name: Get GitHub OIDC token
-        env:
-          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: GitHubActionsTerraformDev
+          allowed-account-ids: "368287211388"
+
+      - name: Verify AWS identity
         run: |
-          TOKEN=$(curl -sS \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
-            | jq -r '.value')
-
-          PAYLOAD=$(echo "$TOKEN" | cut -d '.' -f2)
-
-          # Add padding if necessary
-          case $((${#PAYLOAD} % 4)) in
-            2) PAYLOAD="${PAYLOAD}==" ;;
-            3) PAYLOAD="${PAYLOAD}=" ;;
-          esac
-
-          echo "$PAYLOAD" | base64 -d 2>/dev/null | jq '{
-            iss,
-            sub,
-            aud,
-            repository,
-            repository_id,
-            repository_owner,
-            repository_owner_id,
-            environment
-          }'
+          aws sts get-caller-identity
